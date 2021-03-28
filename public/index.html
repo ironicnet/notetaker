@@ -1,0 +1,210 @@
+<html>
+
+<head>
+<style>
+    video {
+        margin: 20px;
+    }
+    input {
+        width: 500px;
+        margin-left: 20px;
+    }
+    video {
+        max-width: 640px;
+        max-height: 480px;
+    }
+    ol {
+        list-style-type: none;
+        padding-left: 20px;
+    }
+    ol li button {
+        border: 0px;
+        padding: 5px;
+        margin-right: 5px;
+    }
+    .note .body {
+        min-width: 200px;
+        display: inline-block;
+    }
+    .note .body:hover {
+        border: 2px solid slateblue
+    }
+    #noteFile {
+        display: none;
+    }
+</style>
+</head>
+
+<body>
+    <div>
+        <div>
+            <h3>File Source</h3>
+            <input id="sourceFile" type="file" accept="video/*,audio/*">
+        </div>
+        <video id="video" controls width="100%">
+            <source id="videoSource" />
+        </video>
+    </div>
+    <div>
+        <input type="text" id="textInput" placeholder="Add note at current time" />
+        <ol id="noteList">
+
+        </ol>
+        <a href="#" id="downloadNotesLink">Download Notes</a>
+        <a href="#" id="loadNotesLink">Load Notes</a>
+        <input id="noteFile" type="file" accept="application/json, text/*">
+    </div>
+    <script type="text/javascript">
+        let noteId = 0;
+        const addNote = (text, time ) => {
+                const currentId = noteId+=1;
+                const note = {
+                    id: currentId, 
+                    note: text,
+                    time: time,
+                    timeText: new Date(time * 1000).toISOString().substr(11, 8),
+                };
+                notes.push(note);
+                console.log("note", note);
+                return note;
+        };
+        const deleteNote = (note, container) => {
+                const noteIndex = notes.findIndex(existing => existing.id === note.id);
+                notes.splice(noteIndex);
+                container.remove();
+                console.log("deleted note", note, noteIndex);
+                return true;
+        };
+        const getFilename = (fullPath) => {
+            var startIndex = (fullPath.indexOf('\\') >= 0 ? fullPath.lastIndexOf('\\') : fullPath.lastIndexOf('/'));
+            var filename = fullPath.substring(startIndex);
+            if (filename.indexOf('\\') === 0 || filename.indexOf('/') === 0) {
+                filename = filename.substring(1);
+            }
+            return filename;
+        }
+        const downloadNotes = (exportName = "notes") => {
+            var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(notes, null, 2));
+            var downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href",     dataStr);
+            downloadAnchorNode.setAttribute("download", exportName + ".json");
+            document.body.appendChild(downloadAnchorNode); // required for firefox
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+        const jumpToTime = (time) => {
+            video.currentTime = time;
+        }
+
+        const createNoteContainer = (note) => {
+            const container = document.createElement("li");
+            container.classList.add("note");
+
+            const timeSpan = document.createElement("a");
+            timeSpan.appendChild(document.createTextNode(`${note.timeText}`));
+            timeSpan.setAttribute("href", "#");
+            timeSpan.setAttribute("data-time", note.time);
+            timeSpan.addEventListener("click", () => jumpToTime(note.time));
+            const body = document.createElement("span");
+            body.classList.add("body");
+            body.setAttribute("contentEditable", true);
+            body.appendChild(document.createTextNode(`${note.note}`));
+            body.addEventListener("focus", () => {
+                var content = body.innerText;
+                body.setAttribute("data-before", content);
+            });
+            body.addEventListener("keydown", (e) => {
+                    if (e.keyCode === 13) {
+                        e.preventDefault();
+                        body.blur();
+                    }
+            });
+            ['blur', 'keyup', 'paste', 'input'].forEach(key => {
+                body.addEventListener(key, (e) => {
+                    var content = body.innerText;
+                    var previousContent = body.getAttribute("data-before");
+                    if (content != previousContent) {
+                        note.note = content;
+                    }
+                });
+            });
+            
+            const deleteButton = document.createElement("button");
+            deleteButton.appendChild(document.createTextNode("X"));
+            deleteButton.addEventListener("click", () => deleteNote(note, container));
+            const editButton = document.createElement("button");
+            editButton.appendChild(document.createTextNode("E"));
+            editButton.addEventListener("click", () => {
+                const newText = window.prompt("Ingrese la nueva nota", note.note);
+                if (newText) {
+                    note.note = newText;
+                    body.removeChild(body.firstChild)
+                    body.appendChild(document.createTextNode(note.note));
+                }
+            });
+
+            container.appendChild(deleteButton);  
+            container.appendChild(editButton);    
+            container.appendChild(timeSpan);
+            container.appendChild(document.createTextNode(": "));
+            container.appendChild(body);
+            
+            return container;
+        }
+        const sourceFile = document.getElementById("sourceFile");
+        const noteFile = document.getElementById("noteFile");
+        const video = document.getElementById("video");
+        const videoSource = document.getElementById("videoSource");
+        const noteList = document.getElementById("noteList");
+        let notes = [];
+        sourceFile.onchange = function () {
+            videoSource.src = URL.createObjectURL(sourceFile.files[0]);
+            video.load();
+            // even if it's just a pointer to the real file here
+            video.onended = function () {
+                URL.revokeObjectURL(video.currentSrc);
+            };
+        }
+        noteFile.onchange = function () {
+            var file = noteFile.files[0];
+            if (file) {
+                var reader = new FileReader();
+                reader.readAsText(file, "UTF-8");
+                reader.onload = function (evt) {
+                    console.log( evt.target.result, noteList.firstChild, notes)
+                    notes = JSON.parse(evt.target.result);
+                    while (noteList.firstChild) {
+                        noteList.removeChild(noteList.lastChild);
+                    }
+                    noteId = 0;
+                    notes.forEach(note => {
+                        noteId = note.id;
+                        noteList.appendChild(createNoteContainer(note));
+                    });
+
+                    // document.getElementById("fileContents").innerHTML = evt.target.result;
+                }
+                reader.onerror = function (evt) {
+                    console.log( "error reading file", evt)
+                    // document.getElementById("fileContents").innerHTML = "error reading file";
+                }
+            }
+        }
+        const textInput = document.getElementById("textInput");
+        textInput.addEventListener("keyup", event => {
+            if (event.keyCode === 13) {
+                const note = addNote(textInput.value, video.currentTime);
+                const container = createNoteContainer(note);
+                textInput.value = "";
+                
+                noteList.appendChild(container);
+            }
+        });
+        const downloadNotesLink = document.getElementById("downloadNotesLink");
+        downloadNotesLink.addEventListener("click", () => downloadNotes(getFilename(sourceFile.value || "notes")));
+        const loadNotesLink = document.getElementById("loadNotesLink");
+        loadNotesLink.addEventListener("click", () => noteFile.click());
+    </script>
+</body>
+
+</html>
